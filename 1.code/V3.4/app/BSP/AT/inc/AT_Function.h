@@ -1,0 +1,161 @@
+#ifndef _AT_FUNCTION_H_
+#define _AT_FUNCTION_H_
+
+/*add user lib*/
+#include "cJSON.h"
+#include "onenet.h"
+
+/*add c lib*/
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
+#include <stdarg.h>
+
+#include "mqtt.h"
+
+#define AT_UART_DEVICE 2
+
+#define MQTT_KEEP_ALIVE 1 * 10
+
+
+
+/*wifi模块的复位引脚*/
+#define AT_RST_PORT     GPIOC
+#define AT_RST_PIN      GPIO_Pin_5
+/****************************************************************************************************/
+
+#define AT_COMMAND_ARRAY_SIZE 16
+#define AT_MSG_SIZE 1024                       //AT设备消息缓冲区大小
+
+#define MAX_JSON_SIZE							1024
+
+//AT状态机状态
+#define AT_STATUS_NUM 8
+
+typedef enum
+{
+    AT_HW_INIT = 0,        // AT设备硬件初始化
+    AT_REGISTER,            // AT指令注册
+    AT_INIT,                // AT设备软件初始化
+    AT_IDLE,                // AT设备空闲状态 此状态下等待平台的指令
+    AT_MQTT_PARSE,          // AT设备解析平台下发的数据
+    AT_HTTP_OTA_IDLE,       // 检查是否有升级任务
+    AT_HTTP_OTA_DOWNLOAD,   // 下载升级包
+    AT_HTTP_OTA_DOWNLOAD_FINISH, // 下载完成
+    AT_HTTP_OTA_DOWNLOAD_FAIL,   // 下载失败
+    AT_STATUS_MAX           // 状态总数
+} AT_STATUS_TYPE_t;
+
+typedef enum
+{
+    AT_MSG_TYPE = 0,
+    AT_MSG_TYPE_URC = 1,
+    AT_MSG_TYPE_ERROR = 2,
+}AT_MSG_TYPE_t;
+
+//状态机对应的回调函数
+typedef struct
+{
+	AT_STATUS_TYPE_t status;
+	void (*callback)(void *arg1 , void *arg2);
+}AT_STATUS_t;
+
+//AT指令参数
+typedef struct
+{
+    const char *cmd;                            // AT command string
+    const char *response;                       // Expected response string
+    uint16_t timeout;                     // Timeout in milliseconds
+    void (*callback_response)(void);     // Expected response string
+} AT_CMD_t;
+
+//URC指令对应的回调函数
+typedef struct
+{
+    const char *urc_msg;              // AT command string
+    uint8_t (*callback)(void *device ,void *a);     // Expected response string
+} AT_URC_t;
+
+//建立mqtt连接时的参数
+typedef struct
+{
+  char *IP_Address;               // IP 地址
+  uint16_t Port;                  // 端口号
+  char *Product_ID;              // 产品 ID
+  char *Device_Name;              // 设备名称
+  char *SECRET_KEY;              // 设备密钥
+  char Token[256];                    // 令牌
+	uint16_t keepalive;
+  uint16_t reporting_interval;    //主动上报间隔
+}mqtt_connect_params_t;
+
+//wifi参数
+typedef struct
+{
+  /* data */
+  char WiFi_SSID[16];                // WiFi SSID
+  char WiFi_Password[16];            // WiFi 密码
+}wifi_params_t;
+
+// 定义 AT 设备结构体
+typedef struct {
+    AT_STATUS_TYPE_t state;                 // 设备状态
+    char *msg_buf;                   // 消息缓冲区
+    uint32_t buf_size;               // 缓冲区大小
+    uint32_t head;                   // 写指针
+    uint32_t tail;                   // 读指针
+    uint32_t count;                  // 当前数据量
+	uint8_t init_step;									//初始化步骤
+    mqtt_connect_params_t mqtt_params; // MQTT 连接参数
+    wifi_params_t wifi_params;   // WiFi 连接参数
+	uint8_t recv_flag;
+} AT_Device_t;
+
+typedef enum
+{
+	/*AT指令相关错误类型*/
+	AT_CMD_OK = 0,                          //AT指令发送成功
+	AT_ERR_INVALID_PARAM,                   //AT指令参数错误
+	AT_ERR_TIMEOUT,                         //AT指令应答超时
+	AT_ERR_ACK,                             //AT指令应答错误
+	
+	/*AT指令列表相关错误类型*/
+  AT_CMD_ADD_SUCCESS,                     //AT指令添加成功
+	AT_ERR_TABLE_NOT_INIT,                  //AT设备指令集未初始化
+	AT_ERR_TABLE_FULL,                      //AT指令集已满
+	AT_ERR_MEMORY,                          //内存不足
+	
+	/*NTP相关错误类型*/
+  AT_NTP_GET_SUCCESS,                     //NTP指令获取成功
+	AT_NTP_SEND_ERROR,                      //NTP获取指令发送失败
+  AT_NTP_ACK_ERROR,                       //NTP指令应答失败
+	AT_NTP_PARSE_ERROR,
+	
+	/*MQTT相关错误类型*/
+	AT_MQTT_SEND_SUCCESS,                   //MQTT指令上报成功
+	AT_MQTT_SEND_FAIL,                      //MQTT指令上报失败
+
+  AT_MALLOC_FAIL,                         //内存分配失败
+
+  //HTTP相关错误类型
+  AT_HTTP_RESPONSE_ERROR,                 //HTTP响应错误
+  AT_HTTP_PARSE_ERROR,                    //HTTP响应参数错误
+
+}at_err_t;
+
+extern AT_Device_t AT_Device;
+extern AT_CMD_t AT_Cmd_table[AT_COMMAND_ARRAY_SIZE];
+extern AT_URC_t AT_URC_table[AT_COMMAND_ARRAY_SIZE];
+
+
+void at_get_msg(uint8_t *data_buf , uint16_t buf_size);
+
+void at_time_callback(void);
+void AT_poll(void); 
+
+at_err_t AT_Cmd_Register(const char *response, uint16_t timeout, void (*callback_response)(void), int insert_count, const char *cmd, ...);
+at_err_t AT_SendCmd(const char *cmd, const char *response, uint16_t timeout , uint8_t *data_buf);
+
+#endif
